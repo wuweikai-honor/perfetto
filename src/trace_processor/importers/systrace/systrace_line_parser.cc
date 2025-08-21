@@ -149,6 +149,44 @@ base::Status SystraceLineParser::ParseLine(const SystraceLine& line) {
     TrackId track = context_->track_tracker->InternTrack(
         tracks::kCpuFrequencyBlueprint, tracks::Dimensions(event_cpu.value()));
     context_->event_tracker->PushCounter(line.ts, new_state.value(), track);
+  } else if (line.event_name == "cpu_frequency_limits") {
+    std::optional<uint32_t> event_cpu = base::StringToUInt32(args["cpu_id"]);
+    if (!event_cpu.has_value()) {
+      return base::Status("Could not convert event cpu");
+    }
+    std::optional<double> max_freq = args.Find("max") != nullptr ?
+        base::StringToDouble(args["max"]) :
+        base::StringToDouble(args["max_freq"]);
+    std::optional<double> min_freq = args.Find("min") != nullptr ?
+        base::StringToDouble(args["min"]) :
+        base::StringToDouble(args["min_freq"]);
+    if (max_freq.has_value()) {
+      static constexpr auto kMaxBlueprint = tracks::CounterBlueprint(
+          "cpu_max_frequency_limit", tracks::UnknownUnitBlueprint(),
+          tracks::DimensionBlueprints(tracks::kCpuDimensionBlueprint),
+          tracks::FnNameBlueprint([](uint32_t cpu) {
+            return base::StackString<255>("Cpu %u Max Freq Limit", cpu);
+          }));
+      TrackId max_track = context_->track_tracker->InternTrack(
+          kMaxBlueprint, tracks::Dimensions(event_cpu.value()));
+      context_->event_tracker->PushCounter(
+          line.ts, static_cast<double>(max_freq.value()), max_track);
+    }
+    if (min_freq.has_value()) {
+      static constexpr auto kMinBlueprint = tracks::CounterBlueprint(
+          "cpu_min_frequency_limit", tracks::UnknownUnitBlueprint(),
+          tracks::DimensionBlueprints(tracks::kCpuDimensionBlueprint),
+          tracks::FnNameBlueprint([](uint32_t cpu) {
+            return base::StackString<255>("Cpu %u Min Freq Limit", cpu);
+          }));
+      TrackId min_track = context_->track_tracker->InternTrack(
+          kMinBlueprint, tracks::Dimensions(event_cpu.value()));
+      context_->event_tracker->PushCounter(
+          line.ts, static_cast<double>(min_freq.value()), min_track);
+    }
+    if (!max_freq.has_value() && !min_freq.has_value()) {
+      return base::Status("Could not convert both max_freq and min_freq");
+    }
   } else if (line.event_name == "cpu_idle") {
     std::optional<uint32_t> event_cpu = base::StringToUInt32(args["cpu_id"]);
     std::optional<double> new_state = base::StringToDouble(args["state"]);
